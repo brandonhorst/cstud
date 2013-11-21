@@ -39,4 +39,6 @@ If the Python 3 bindings are not installed, running cstud will automatically ins
 
 ##Limitations
 
-The Caché Python bindings must be installed on the local machine. `cstud` relies on `%Compiler.UDL.TextServices`, which will be added to Caché in version 2014.2. In other words, `cstud` does not run on any currently-released version of Caché. 
+* The Caché Python bindings must be installed on the local machine.
+* `cstud` relies on `%Compiler.UDL.TextServices`, which will be added to Caché in version 2014.2. In other words, `cstud` does not run on any currently-released version of Caché. 
+* `%Compiler.UDL.TextServices` does not currently support `XDATA` blocks or `SqlComputeCode` attributes. Once that functionality is added, `cstud` will automatically support it.
