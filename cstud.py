@@ -9,25 +9,28 @@ import os.path
 
 class CacheInstance:
     def __init__(self, instanceName="", host="", port=0, location=""):
-        if not (host or port or location):
-            if not instanceName:
-                instanceName = self.getDefaultCacheInstanceName()
-            ccontrol = subprocess.Popen(['ccontrol', 'qlist'],stdout=subprocess.PIPE)
-            stdout = ccontrol.communicate()[0]
-            instanceStrings = stdout.decode('UTF-8').split('\n')
-            for instanceString in instanceStrings:
-                instanceArray = instanceString.split('^')
-                if instanceName.upper() == instanceArray[0]:
-                    self.host = '127.0.0.1'
-                    self.port = int(instanceArray[5])
-                    self.location = instanceArray[1]
-                    break
-            else:
-                print("Invalid Instance Name")
-                quit(1)
+        if not instanceName:
+            instanceName = self.getDefaultCacheInstanceName()
+
+        ccontrol = subprocess.Popen(['ccontrol', 'qlist'],stdout=subprocess.PIPE)
+        stdout = ccontrol.communicate()[0]
+        instanceStrings = stdout.decode('UTF-8').split('\n')
+        for instanceString in instanceStrings:
+            instanceArray = instanceString.split('^')
+            if instanceName.upper() == instanceArray[0]:
+                self.host = '127.0.0.1'
+                self.port = int(instanceArray[5])
+                self.location = instanceArray[1]
+                break
         else:
+            print("Invalid Instance Name: %s".format('instanceName'))
+            quit(1)
+
+        if host:
             self.host = host
+        if port:
             self.port = port
+        if location:
             self.location = location
 
     def getDefaultCacheInstanceName(self):
@@ -141,7 +144,7 @@ def __main():
     uploadParser.add_argument("files", metavar="F", type=argparse.FileType('r'), nargs="+", help="files to upload")
     uploadParser.set_defaults(func=uploadClasses)
 
-    downloadParser = subParsers.add_parser('download', help='Download classes to the file system')
+    downloadParser = subParsers.add_parser('download', help='Download classes')
     downloadParser.add_argument('-v','--verbose',action='store_true',help='output details')
     downloadParser.add_argument("classes", metavar="C", type=str, nargs="+", help="Classes to download")
     downloadParser.set_defaults(func=downloadClasses)
