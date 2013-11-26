@@ -6,6 +6,8 @@ InterSystems Caché is a high-performance post-relational database. It's awesome
 
 This command line utility opens up Caché to allow for the development of plugins for various IDEs and Editors, as well as direct command-line usage.
 
+Current version: 0.0.2
+
 ##Usage
 
     cstud [CONNECTION_ARGUMENTS] COMMAND [COMMAND_ARGUMENTS]
@@ -44,3 +46,14 @@ If the Python 3 bindings are not installed, running cstud will automatically ins
 * The Caché Python bindings must be installed on the local machine.
 * `cstud` relies on `%Compiler.UDL.TextServices`, which will be added to Caché in version 2014.2. In other words, `cstud` does not run on any currently-released version of Caché. 
 * `%Compiler.UDL.TextServices` does not currently support `XDATA` blocks or `SqlComputeCode` attributes. Once that functionality is added, `cstud` will automatically support it.
+* At the moment, it only works on OSX. It was tested on Mavericks, but should work with any version.
+
+##Goals
+
+* Allow for all functionality that Studio provides (hard functionality, not wizards and such) on all Caché-supported platforms (including OSX, UNIX, and Windows).
+    - ~~Listing available classes by namespace~~
+    - ~~Download classes by name~~
+    - Download generated code (int, cls...)
+    - Upload classes (does not yet support XDATA and SqlComputeCode)
+* Handle errors well.
+* Soft functionality (syntax highlighting, wizards, snippets, and the like) will be pursued in independent projects. I hope to add functionality for Sublime Text, a solid multi-platform editor.
