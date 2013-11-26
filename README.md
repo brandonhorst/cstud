@@ -16,12 +16,14 @@ This command line utility opens up Caché to allow for the development of plugin
     - Default: `_SYSTEM`
 * `-P, --password` - the password for the Caché user.
     - Default: `SYS`
+
+Additionally, you need to specify either an Instance Name, or a Hostname/Port/Directory:
+        
+* `-I, --instance` - the instance name of a local cache instance.
+    - Default: the results of `ccontrol default`
 * `-H, --host` - the host name or IP Address of the Caché server.
-    - Default: `127.0.0.1`
 * `-S, --port` - the SuperServer port number of the Caché server.
-    - Default: `1972`
-* `-D, --cache-directory` - the Caché install directory. 
-    - Default: ` /intersystems/cache`
+* `-D, --directory` - the Caché install directory. 
 
 ###`COMMAND`s and `COMMAND_ARGUMENTS`
 
