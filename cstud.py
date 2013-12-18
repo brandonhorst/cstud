@@ -2,10 +2,14 @@
 
 import argparse
 #import intersys.pythonbind3 as pythonbind
+import string
 import subprocess
 import sys
 import os
 import os.path
+import re
+import signal
+signal.signal(signal.SIGPIPE,signal.SIG_DFL) 
 
 class CacheInstance:
     def __init__(self, instanceName="", host="", port=0, location=""):
@@ -76,46 +80,109 @@ def connect(bindings,username,password,namespace,instance):
     database = bindings.database(conn)
     return database
 
+def deleteRoutine(database,routineName):
+    database.run_class_method('%Library.Routine',"Delete",[routineName])
+
 def deleteClass(database,className):
     database.run_class_method('%SYSTEM.OBJ', 'Delete', [className])
+
+def routineExists(database,routineName):
+    exists = database.run_class_method('%Library.Routine','Exists',[routineName])
+    return exists
 
 def classExists(database,className):
     exists = database.run_class_method('%Dictionary.ClassDefinition', '%ExistsId', [className])
     return exists
 
-def uploadClasses(pythonbind,database,verbose,files):
-    for openFile in files:
-        stream = database.run_class_method('%Stream.GlobalCharacter', '%New', [])
-        text = openFile.read()
-
-        classNameIndexBegin = text.find(' ')+1
+def classNameForText(text):
+    match = re.search(r'^Class\s',text,re.MULTILINE)
+    if match:
+        classNameIndexBegin = match.end()
         classNameIndexEnd = text.find(' ', classNameIndexBegin)
         className = text[classNameIndexBegin:classNameIndexEnd]
+        return className
+    return None
         
-        if verbose: print('Deleting %s' % className)
-        if classExists(database,className):
-            deleteClass(database,className)
 
-        crlfText = text.replace('\n','\r\n')
-        stream.run_obj_method('Write',[crlfText])
 
-        if verbose: print('Uploading %s' % className)
-        x = database.run_class_method('%Compiler.UDL.TextServices', 'SetTextFromStream',[None, className, stream])
-        database.run_class_method('%SYSTEM.OBJ','Compile',[className])
-        #print(x)
+def uploadRoutine(pythonbind,database,verbose,text):
+    match = re.search(r'^(\w|%)+',text,re.MULTILINE)
+    routineName = text[match.start():match.end()]
 
-def downloadClasses(pythonbind,database,verbose,classes):
-    for className in classes:
+    crlfText = text.replace('\n','\r\n')
 
-        stream = database.run_class_method('%Stream.GlobalCharacter', '%New', [])
-        argList = [None,className,stream] #the last None is byref
-        x = database.run_class_method('%Compiler.UDL.TextServices', 'GetTextAsStream', argList)
-        outputStream = argList[2]
-        content = outputStream.run_obj_method('Read',[])
+    if verbose: print('Deleting %s' % routineName)
+    if routineExists(database,routineName):
+        deleteRoutine(database,routineName)
+
+    routine = database.run_class_method('%Library.Routine', '%New', [routineName])
+
+    crlfText = text.replace('\n','\r\n')
+    for line in crlfText.split("\r\n"):
+        routine.run_obj_method('WriteLine',[line])
+
+    if verbose: print('Uploading %s' % routineName)
+    routine.run_obj_method('Save',[])
+    routine.run_obj_method('Compile',[])
+    print()
+
+
+def uploadClass(pythonbind,database,verbose,text):
+    stream = database.run_class_method('%Stream.GlobalCharacter', '%New', [])
+    name = classNameForText(text)
+
+    if verbose: print('Deleting %s' % name)
+    if classExists(database,name):
+        deleteClass(database,name)
+
+    crlfText = text.replace('\n','\r\n')
+    stream.run_obj_method('Write',[crlfText])
+
+    if verbose: print('Uploading %s' % name)
+    database.run_class_method('%Compiler.UDL.TextServices', 'SetTextFromStream',[None, name, stream])
+    database.run_class_method('%SYSTEM.OBJ','Compile',[name])
+
+def uploadStuff(pythonbind,database,verbose,files):
+    for openFile in files:
+        text = openFile.read()
+        name = classNameForText(text)
+        if name:
+            uploadClass(pythonbind,database,verbose,text)
+        else:
+            uploadRoutine(pythonbind,database,verbose,text)
+
+
+
+def downloadClass(pythonbind,database,verbose,className):
+    stream = database.run_class_method('%Stream.GlobalCharacter', '%New', [])
+    argList = [None,className,stream] #the last None is byref
+    database.run_class_method('%Compiler.UDL.TextServices', 'GetTextAsStream', argList)
+    outputStream = argList[2]
+    content = outputStream.run_obj_method('Read',[])
+    if (content):
         print(content)
+        return True
+    return False
 
-def listClasses(pythonbind,database):
+def downloadRoutines(pythonbind,database,verbose,routineName):
+    routine = database.run_class_method('%Library.Routine','%OpenId',[routineName])
+    if routine:
+        content = routine.run_obj_method('Read',[])
+        print(content)
+        return True
+    return False
+
+def downloadStuff(pythonbind,database,verbose,names):
+    for name in names:
+        worked = downloadClass(pythonbind,database,verbose,name)
+        if not worked:
+            downloadRoutines(pythonbind,database,verbose,name)
+
+
+def listClasses(pythonbind,database,system):
     sql = 'SELECT Name FROM %Dictionary.ClassDefinition'
+    if not system:
+        sql = sql + " WHERE NOT Name %STARTSWITH '%'"
     query = pythonbind.query(database)
     sql_code = query.prepare(sql)
     sql_code = query.execute()
@@ -123,6 +190,28 @@ def listClasses(pythonbind,database):
         cols = query.fetch([None])
         if len(cols) == 0: break
         print(cols[0])
+
+def listRoutines(pythonbind,database,type,system):
+    sql = "SELECT Name FROM %Library.Routine_RoutineList('*.{0},%*.{0}',1,0)".format(type)
+    if not system:
+        sql = sql + " WHERE NOT Name %STARTSWITH '%'"
+    query = pythonbind.query(database)
+    sql_code = query.prepare(sql)
+    sql_code = query.execute()
+    while True:
+        cols = query.fetch([None])
+        if len(cols) == 0: break
+        print(cols[0])
+
+
+def listStuff(pythonbind,database,types,system):
+    if types == None:
+        types = ['cls','mac','int','inc','bas']
+    for theType in types:
+        if theType.lower() == 'cls':
+            listClasses(pythonbind,database,system)
+        else:
+            listRoutines(pythonbind,database,theType,system)
 
 def __main():
     mainParser = argparse.ArgumentParser()
@@ -142,15 +231,18 @@ def __main():
     uploadParser = subParsers.add_parser('upload', help='Upload classes into the given namespace')
     uploadParser.add_argument('-v','--verbose',action='store_true',help='output details')
     uploadParser.add_argument("files", metavar="F", type=argparse.FileType('r'), nargs="+", help="files to upload")
-    uploadParser.set_defaults(func=uploadClasses)
+    uploadParser.set_defaults(func=uploadStuff)
 
     downloadParser = subParsers.add_parser('download', help='Download classes')
     downloadParser.add_argument('-v','--verbose',action='store_true',help='output details')
-    downloadParser.add_argument("classes", metavar="C", type=str, nargs="+", help="Classes to download")
-    downloadParser.set_defaults(func=downloadClasses)
+    # downloadParser.add_argument('-n','--routineName',type=str,help='name for uploaded routines')
+    downloadParser.add_argument("names", metavar="N", type=str, nargs="+", help="Classes or Routines to download")
+    downloadParser.set_defaults(func=downloadStuff)
 
-    listParser = subParsers.add_parser('list', help='List all classes in namespace')
-    listParser.set_defaults(func=listClasses)
+    listParser = subParsers.add_parser('list', help='List all classes and routines in namespace')
+    listParser.add_argument('-t','--type',action='append',help='cls|mac|int|obj|inc|bas',dest="types",choices=['cls','obj','mac','int','inc','bas'])
+    listParser.add_argument('-s','--noSystem',action='store_false', help='hide system classes',dest="system")
+    listParser.set_defaults(func=listStuff)
 
 
     results = mainParser.parse_args()
