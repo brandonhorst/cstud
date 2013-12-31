@@ -158,19 +158,27 @@ def downloadClass(pythonbind,database,verbose,className):
     argList = [None,className,stream] #the last None is byref
     database.run_class_method('%Compiler.UDL.TextServices', 'GetTextAsStream', argList)
     outputStream = argList[2]
-    content = outputStream.run_obj_method('Read',[])
-    if (content):
-        print(content)
-        return True
-    return False
+    worked = False
+    while True:
+        content = outputStream.run_obj_method('Read',[])
+        if content:
+            worked = True
+            print(content, end="")
+        else:
+            break
+    return worked
 
 def downloadRoutines(pythonbind,database,verbose,routineName):
     routine = database.run_class_method('%Library.Routine','%OpenId',[routineName])
     if routine:
-        content = routine.run_obj_method('Read',[])
-        print(content)
+        while True:
+            content = routine.run_obj_method('Read',[])
+            if not content:
+                break
+            print(content,end="")
         return True
-    return False
+    else:
+        return False
 
 def downloadStuff(pythonbind,database,verbose,names):
     for name in names:
