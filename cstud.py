@@ -54,20 +54,22 @@ def addToEnvPath(env,location):
         changedIt = False
     return changedIt
 
-def install(instance):
+def install(instance,force):
     binDirectory = os.path.join(instance.location,'bin')
     rerun = addToEnvPath('DYLD_LIBRARY_PATH',binDirectory) and addToEnvPath('PATH',binDirectory)
     if rerun:
         os.execve(os.path.realpath(__file__), sys.argv, os.environ)
 
     try:
+        if force:
+            raise ImportError
         import intersys.pythonbind3
     except ImportError:
         print("First run - installing python bindings")
-        installerDirectory = os.path.join(directory, 'dev', 'python')
+        installerDirectory = os.path.join(instance.location, 'dev', 'python')
         installerPath = os.path.join(installerDirectory, 'setup3.py')
         installerProcess = subprocess.Popen([sys.executable, installerPath, 'install'], cwd=installerDirectory, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)
-        installerProcess.communicate(bytes(directory, 'UTF-8'))
+        installerProcess.communicate(bytes(instance.location, 'UTF-8'))
         import intersys.pythonbind3
 
 
@@ -233,6 +235,7 @@ def __main():
     locationGroup.add_argument('-H', '--host', type=str)
     locationGroup.add_argument('-S', '--port', type=int)
     locationGroup.add_argument('-D', '--directory', type=str)
+    mainParser.add_argument('--force-install', action='store_true')
 
     subParsers = mainParser.add_subparsers(help='cstud commands')
 
@@ -257,7 +260,7 @@ def __main():
     kwargs = dict(results._get_kwargs())
 
     instance = CacheInstance(kwargs.pop('instance'), kwargs.pop('host'), kwargs.pop('port'), kwargs.pop('directory'))
-    bindings = install(instance)
+    bindings = install(instance,force=kwargs.pop('force_install'))
     database = connect(bindings, kwargs.pop('username'), kwargs.pop('password'), kwargs.pop('namespace'), instance)
     kwargs.pop('func')(bindings,database,**kwargs)
 
