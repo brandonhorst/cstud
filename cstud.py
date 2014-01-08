@@ -5,6 +5,7 @@ import argparse
 import string
 import subprocess
 import sys
+import math
 import os
 import os.path
 import re
@@ -105,29 +106,29 @@ def classNameForText(text):
         return className
     return None
         
-
+def chunkString(string,chunkSize=32000):
+    return [string[i:i+chunkSize] for i in range(0, len(string), chunkSize)]
 
 def uploadRoutine(pythonbind,database,verbose,text):
-    match = re.search(r'^(\w|%)+',text,re.MULTILINE)
-    routineName = text[match.start():match.end()]
+    match = re.search(r'^(#; )?(?P<routine_name>(\w|%|\.)+)',text,re.MULTILINE)
+    routineName = match.group('routine_name')
 
     crlfText = text.replace('\n','\r\n')
 
-    if verbose: print('Deleting %s' % routineName)
     if routineExists(database,routineName):
+        if verbose: print('Deleting %s' % routineName)
         deleteRoutine(database,routineName)
 
     routine = database.run_class_method('%Library.Routine', '%New', [routineName])
 
     crlfText = text.replace('\n','\r\n')
-    for line in crlfText.split("\r\n"):
-        routine.run_obj_method('WriteLine',[line])
+
+    for chunk in chunkString(crlfText):
+        routine.run_obj_method('Write',[chunk])
 
     if verbose: print('Uploading %s' % routineName)
     routine.run_obj_method('Save',[])
     routine.run_obj_method('Compile',[])
-    print()
-
 
 def uploadClass(pythonbind,database,verbose,text):
     stream = database.run_class_method('%Stream.GlobalCharacter', '%New', [])
@@ -138,7 +139,9 @@ def uploadClass(pythonbind,database,verbose,text):
         deleteClass(database,name)
 
     crlfText = text.replace('\n','\r\n')
-    stream.run_obj_method('Write',[crlfText])
+
+    for chunk in chunkString(crlfText):
+        stream.run_obj_method('Write',[chunk])
 
     if verbose: print('Uploading %s' % name)
     database.run_class_method('%Compiler.UDL.TextServices', 'SetTextFromStream',[None, name, stream])
