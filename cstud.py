@@ -10,6 +10,7 @@ import os
 import os.path
 import re
 import signal
+import threading
 signal.signal(signal.SIGPIPE,signal.SIG_DFL) 
 
 class CacheInstance:
@@ -109,15 +110,21 @@ def classNameForText(text):
 def chunkString(string,chunkSize=32000):
     return [string[i:i+chunkSize] for i in range(0, len(string), chunkSize)]
 
+# def outputIfFile(string,openFile):
+#     if openFile:
+#         openFile.write(string)
+#     else:
+#         print(string,end="")
+
 def uploadRoutine(pythonbind,database,verbose,text):
     match = re.search(r'^(#; )?(?P<routine_name>(\w|%|\.)+)',text,re.MULTILINE)
     routineName = match.group('routine_name')
 
     crlfText = text.replace('\n','\r\n')
 
-    if routineExists(database,routineName):
-        if verbose: print('Deleting %s' % routineName)
-        deleteRoutine(database,routineName)
+    # if routineExists(database,routineName):
+        # if verbose: print('Deleting %s' % routineName)
+        # deleteRoutine(database,routineName)
 
     routine = database.run_class_method('%Library.Routine', '%New', [routineName])
 
@@ -128,69 +135,93 @@ def uploadRoutine(pythonbind,database,verbose,text):
 
     if verbose: print('Uploading %s' % routineName)
     routine.run_obj_method('Save',[])
-    routine.run_obj_method('Compile',[])
+    routine.run_obj_method('Compile',['cko'])
 
 def uploadClass(pythonbind,database,verbose,text):
     stream = database.run_class_method('%Stream.GlobalCharacter', '%New', [])
     name = classNameForText(text)
 
-    if verbose: print('Deleting %s' % name)
-    if classExists(database,name):
-        deleteClass(database,name)
+    # if classExists(database,name):
+    #     if verbose: print('Deleting %s' % name)
+        #deleteClass(database,name)
 
     crlfText = text.replace('\n','\r\n')
 
-    for chunk in chunkString(crlfText):
-        stream.run_obj_method('Write',[chunk])
+    with open('/tmp/testtest','wb') as f:
+        for chunk in chunkString(crlfText):
+            stream.run_obj_method('Write',[chunk])
+            f.write(bytes(chunk,"UTF-8"))
 
     if verbose: print('Uploading %s' % name)
     database.run_class_method('%Compiler.UDL.TextServices', 'SetTextFromStream',[None, name, stream])
-    database.run_class_method('%SYSTEM.OBJ','Compile',[name])
+    database.run_class_method('%SYSTEM.OBJ','Compile',[name,'cko'])
+
+def uploadOnce(pythonbind,database,verbose,text):
+    name = classNameForText(text)
+    if name:
+        uploadClass(pythonbind,database,verbose,text)
+    else:
+        uploadRoutine(pythonbind,database,verbose,text)
 
 def uploadStuff(pythonbind,database,verbose,files):
     for openFile in files:
         text = openFile.read()
-        name = classNameForText(text)
-        if name:
-            uploadClass(pythonbind,database,verbose,text)
-        else:
-            uploadRoutine(pythonbind,database,verbose,text)
-
-
+        uploadOnce(pythonbind,database,verbose,text)
 
 def downloadClass(pythonbind,database,verbose,className):
     stream = database.run_class_method('%Stream.GlobalCharacter', '%New', [])
     argList = [None,className,stream] #the last None is byref
     database.run_class_method('%Compiler.UDL.TextServices', 'GetTextAsStream', argList)
     outputStream = argList[2]
-    worked = False
+    total = ""
     while True:
         content = outputStream.run_obj_method('Read',[])
         if content:
-            worked = True
-            print(content, end="")
+            lfcontent = content.replace('\r\n','\n')
+            total = total + lfcontent
         else:
             break
-    return worked
+    return total
 
-def downloadRoutines(pythonbind,database,verbose,routineName):
+def downloadRoutine(pythonbind,database,verbose,routineName):
     routine = database.run_class_method('%Library.Routine','%OpenId',[routineName])
+    total = ""
     if routine:
         while True:
             content = routine.run_obj_method('Read',[])
-            if not content:
+            if content:
+                lfcontent = content.replace('\r\n','\n')
+                total += lfcontent
+            else:
                 break
-            print(content,end="")
-        return True
-    else:
-        return False
+    return total
+
+def downloadOnce(pythonbind,database,verbose,name):
+    content = downloadClass(pythonbind,database,verbose,name)
+    if not content:
+        content = downloadRoutine(pythonbind,database,verbose,name)
+    return content
 
 def downloadStuff(pythonbind,database,verbose,names):
     for name in names:
-        worked = downloadClass(pythonbind,database,verbose,name)
-        if not worked:
-            downloadRoutines(pythonbind,database,verbose,name)
+        print(downloadOnce(pythonbind,database,verbose,name))
 
+def editOnce(pythonbind,database,name):
+    initialContent = downloadOnce(pythonbind,database,False,name)
+
+    editor = subprocess.Popen([os.environ['EDITOR']], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+
+    finalContentTuple = editor.communicate(bytes(initialContent,'UTF-8'))
+    finalContent = finalContentTuple[0].decode('UTF-8')
+
+    uploadOnce(pythonbind,database,False,finalContent)
+
+def editStuff(pythonbind,database,names):
+    threads = []
+    for name in names:
+        threads.append(threading.Thread(target=editOnce, args=[pythonbind,database,name]))
+    [thread.start() for thread in threads]
+    [thread.join() for thread in threads]
 
 def listClasses(pythonbind,database,system):
     sql = 'SELECT Name FROM %Dictionary.ClassDefinition'
@@ -242,16 +273,20 @@ def __main():
 
     subParsers = mainParser.add_subparsers(help='cstud commands')
 
-    uploadParser = subParsers.add_parser('upload', help='Upload classes into the given namespace')
+    uploadParser = subParsers.add_parser('upload', help='Upload and compile classes or routines')
     uploadParser.add_argument('-v','--verbose',action='store_true',help='output details')
     uploadParser.add_argument("files", metavar="F", type=argparse.FileType('r'), nargs="+", help="files to upload")
     uploadParser.set_defaults(func=uploadStuff)
 
-    downloadParser = subParsers.add_parser('download', help='Download classes')
+    downloadParser = subParsers.add_parser('download', help='Download classes or routines')
     downloadParser.add_argument('-v','--verbose',action='store_true',help='output details')
     # downloadParser.add_argument('-n','--routineName',type=str,help='name for uploaded routines')
     downloadParser.add_argument("names", metavar="N", type=str, nargs="+", help="Classes or Routines to download")
     downloadParser.set_defaults(func=downloadStuff)
+
+    editParser = subParsers.add_parser('edit', help='Download classes')
+    editParser.add_argument("names", metavar="N", type=str, nargs="+", help="Classes or Routines to edit")
+    editParser.set_defaults(func=editStuff)
 
     listParser = subParsers.add_parser('list', help='List all classes and routines in namespace')
     listParser.add_argument('-t','--type',action='append',help='cls|mac|int|obj|inc|bas',dest="types",choices=['cls','obj','mac','int','inc','bas'])
