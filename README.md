@@ -33,6 +33,9 @@ Additionally, you need to specify either an Instance Name, or a Hostname/Port/Di
 * `upload` - upload all files specified in `COMMAND_ARGUMENTS` to the Caché server
 * `download` - download all classes specificed in `COMMAND_ARGUMENTS` from the Caché server, and output to stdout
 * `edit` - download all classes specificed in `COMMAND_ARGUMENTS` from the Caché server, and open up the editor specified by the EDITOR environment variable. After the editor closes, upload that result to the server and compile. This has been tested with EDITOR=subl (for Sublime Text) and EDITOR=mate (for TextMate) and works well.
+* `execute` - Execute arbitrary COS code, either from a file or passed into STDIN. For ease of use, I would recommend adding the following code to your .bash_profile:
+    * `function cx { (echo "$1" | cstud execute -) }`
+    * Then you can run it like `cx 'write $job'`
 
 ###Notes
 

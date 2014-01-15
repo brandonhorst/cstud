@@ -6,6 +6,7 @@ import string
 import subprocess
 import sys
 import math
+import fileinput
 import os
 import os.path
 import re
@@ -87,8 +88,9 @@ def connect(bindings,username,password,namespace,instance):
 def deleteRoutine(database,routineName):
     database.run_class_method('%Library.Routine',"Delete",[routineName])
 
-def deleteClass(database,className):
-    database.run_class_method('%SYSTEM.OBJ', 'Delete', [className])
+def deleteClass(database,className,verbose):
+    flags = "d" if verbose else "-d"
+    database.run_class_method('%SYSTEM.OBJ', 'Delete', [className,flags])
 
 def routineExists(database,routineName):
     exists = database.run_class_method('%Library.Routine','Exists',[routineName])
@@ -120,8 +122,6 @@ def uploadRoutine(pythonbind,database,verbose,text):
     match = re.search(r'^(#; )?(?P<routine_name>(\w|%|\.)+)',text,re.MULTILINE)
     routineName = match.group('routine_name')
 
-    crlfText = text.replace('\n','\r\n')
-
     # if routineExists(database,routineName):
         # if verbose: print('Deleting %s' % routineName)
         # deleteRoutine(database,routineName)
@@ -141,20 +141,18 @@ def uploadClass(pythonbind,database,verbose,text):
     stream = database.run_class_method('%Stream.GlobalCharacter', '%New', [])
     name = classNameForText(text)
 
-    # if classExists(database,name):
-    #     if verbose: print('Deleting %s' % name)
-        #deleteClass(database,name)
+    if classExists(database,name):
+        deleteClass(database,name,verbose)
 
     crlfText = text.replace('\n','\r\n')
 
-    with open('/tmp/testtest','wb') as f:
-        for chunk in chunkString(crlfText):
-            stream.run_obj_method('Write',[chunk])
-            f.write(bytes(chunk,"UTF-8"))
+    for chunk in chunkString(crlfText):
+        stream.run_obj_method('Write',[chunk])
 
     if verbose: print('Uploading %s' % name)
     database.run_class_method('%Compiler.UDL.TextServices', 'SetTextFromStream',[None, name, stream])
-    database.run_class_method('%SYSTEM.OBJ','Compile',[name,'cko'])
+    flags = "ckd" if verbose else "ck-d"
+    database.run_class_method('%SYSTEM.OBJ','Compile',[name,flags])
 
 def uploadOnce(pythonbind,database,verbose,text):
     name = classNameForText(text)
@@ -205,6 +203,39 @@ def downloadOnce(pythonbind,database,verbose,name):
 def downloadStuff(pythonbind,database,verbose,names):
     for name in names:
         print(downloadOnce(pythonbind,database,verbose,name))
+
+def executeCode(pythonbind,database,verbose,code):
+    stream = database.run_class_method('%Stream.GlobalCharacter', '%New', [])
+    className = "ISCZZZZZZZZZZZZZZCSTUD.cstud"
+    methodName = "xecute"
+    classCode = """Class {0} Extends %RegisteredObject {{
+    ClassMethod {1}() {{
+        {2}
+    }}
+    }}
+    """.format(className,methodName,code).replace("\n","\r\n")
+
+    if classExists(database,className):
+        deleteClass(database,className,verbose)
+
+    for chunk in chunkString(classCode):
+        stream.run_obj_method('Write',[chunk])
+
+    database.run_class_method('%Compiler.UDL.TextServices', 'SetTextFromStream',[None, className, stream])
+    flags = "ckd" if verbose else "ck-d"
+    database.run_class_method('%SYSTEM.OBJ','Compile',[className,flags])
+    database.run_class_method(className,methodName,[])
+    print()
+
+def executeFile(pythonbind,database,verbose,theFile):
+    executeCode(pythonbind,database,verbose,theFile.read())
+
+def executeStuff(pythonbind,database,verbose,stdin,files):
+    if stdin:
+        inlineCode = sys.stdin.read().replace("\n","\r\n")
+        executeCode(pythonbind,database,verbose,inlineCode)
+    for f in files:
+        print(executeFile(pythonbind,database,verbose,f))
 
 def editOnce(pythonbind,database,name):
     initialContent = downloadOnce(pythonbind,database,False,name)
@@ -284,6 +315,12 @@ def __main():
     downloadParser.add_argument("names", metavar="N", type=str, nargs="+", help="Classes or Routines to download")
     downloadParser.set_defaults(func=downloadStuff)
 
+    executeParser = subParsers.add_parser('execute', help='Execute arbitrary COS code')
+    executeParser.add_argument('-v','--verbose', action='store_true', help='output details')
+    executeParser.add_argument('-', dest="stdin", action='store_true', help='Take code from stdin')
+    executeParser.add_argument("files", metavar="N", type=str, nargs="*", help="Execute routine specified in a file")
+    executeParser.set_defaults(func=executeStuff)
+
     editParser = subParsers.add_parser('edit', help='Download classes')
     editParser.add_argument("names", metavar="N", type=str, nargs="+", help="Classes or Routines to edit")
     editParser.set_defaults(func=editStuff)
@@ -292,7 +329,6 @@ def __main():
     listParser.add_argument('-t','--type',action='append',help='cls|mac|int|obj|inc|bas',dest="types",choices=['cls','obj','mac','int','inc','bas'])
     listParser.add_argument('-s','--noSystem',action='store_false', help='hide system classes',dest="system")
     listParser.set_defaults(func=listStuff)
-
 
     results = mainParser.parse_args()
     kwargs = dict(results._get_kwargs())
