@@ -6,7 +6,6 @@ import string
 import subprocess
 import sys
 import math
-import fileinput
 import os
 import os.path
 import re
