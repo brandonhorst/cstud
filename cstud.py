@@ -126,9 +126,6 @@ class Cache:
             return className
         return None
             
-    def chunkString(self,string,chunkSize=32000):
-        return [string[i:i+chunkSize] for i in range(0, len(string), chunkSize)]
-
     def uploadRoutine(self,text):
         match = re.search(r'^(#; )?(?P<routine_name>(\w|%|\.)+)',text,re.MULTILINE)
         routineName = match.group('routine_name')
@@ -141,8 +138,7 @@ class Cache:
 
         crlfText = text.replace('\n','\r\n')
 
-        for chunk in self.chunkString(crlfText):
-            routine.run_obj_method('Write',[chunk])
+        self.writeStream(routine,crlfText)
 
         if verbose: print('Uploading %s' % routineName)
         routine.run_obj_method('Save',[])
@@ -157,8 +153,7 @@ class Cache:
 
         crlfText = text.replace('\n','\r\n')
 
-        for chunk in self.chunkString(crlfText):
-            stream.run_obj_method('Write',[chunk])
+        self.writeStream(stream,crlfText)
 
         if self.verbosity: print('Uploading %s' % name)
 
@@ -173,38 +168,41 @@ class Cache:
         else:
             self.uploadRoutine(text)
 
-    def upload(self,files):
+    def upload_(self,files):
         for openFile in files:
             text = openFile.read()
             self.uploadOnce(text)
 
-    def downloadClass(self,className):
-        stream = self.database.run_class_method('%Stream.GlobalCharacter', '%New', [])
-        argList = [None,className,stream] #the last None is byref
-        self.database.run_class_method('%Compiler.UDL.TextServices', 'GetTextAsStream', argList)
-        outputStream = argList[2]
+    def readStream(self,stream):
         total = ""
         while True:
-            content = outputStream.run_obj_method('Read',[])
+            content = stream.run_obj_method('Read',[])
             if content:
+                if type(content) != str:
+                    content = content.decode('utf-8')
                 lfcontent = content.replace('\r\n','\n')
                 total = total + lfcontent
             else:
                 break
         return total
 
+    def writeStream(self,stream,data):
+        for chunk in self.chunkString(data):
+            stream.run_obj_method('Write',[chunk])
+
+    def chunkString(self,string,chunkSize=32000):
+        return [string[i:i+chunkSize] for i in range(0, len(string), chunkSize)]
+
+    def downloadClass(self,className):
+        stream = self.database.run_class_method('%Stream.GlobalCharacter', '%New', [])
+        argList = [None,className,stream] #the last None is byref
+        self.database.run_class_method('%Compiler.UDL.TextServices', 'GetTextAsStream', argList)
+        outputStream = argList[2]
+        return self.readStream(outputStream)
+
     def downloadRoutine(self,routineName):
         routine = self.database.run_class_method('%Library.Routine','%OpenId',[routineName])
-        total = ""
-        if routine:
-            while True:
-                content = routine.run_obj_method('Read',[])
-                if content:
-                    lfcontent = content.replace('\r\n','\n')
-                    total += lfcontent
-                else:
-                    break
-        return total
+        return readStream(routine)
 
     def downloadOnce(self,name):
         content = self.downloadClass(name)
@@ -212,7 +210,7 @@ class Cache:
             content = self.downloadRoutine(name)
         return content
 
-    def download(self,names):
+    def download_(self,names):
         for name in names:
             print(self.downloadOnce(name))
 
@@ -230,8 +228,7 @@ class Cache:
         if self.classExists(className):
             self.deleteClass(className)
 
-        for chunk in self.chunkString(classCode):
-            stream.run_obj_method('Write',[chunk])
+        self.writeStream(write,classCode)
 
         self.database.run_class_method('%Compiler.UDL.TextServices', 'SetTextFromStream',[None, className, stream])
         flags = "ckd" if self.verbosity else "ck-d"
@@ -242,7 +239,7 @@ class Cache:
     def executeFile(self,theFile):
         self.executeCode(theFile.read())
 
-    def execute(self,files,stdin):
+    def execute_(self,files,stdin):
         if stdin:
             inlineCode = sys.stdin.read().replace("\n","\r\n")
             self.executeCode(inlineCode)
@@ -259,7 +256,7 @@ class Cache:
 
         self.uploadOnce(finalContent)
 
-    def edit(self,names):
+    def edit_(self,names):
         threads = [threading.Thread(target=self.editOnce, args=[name]) for name in names]
             
         [thread.start() for thread in threads]
@@ -269,7 +266,7 @@ class Cache:
         sql = 'SELECT Name FROM %Dictionary.ClassDefinition'
         if not system:
             sql = sql + " WHERE NOT Name %STARTSWITH '%'"
-        query = self.pythonbind.query(database)
+        query = self.pythonbind.query(self.database)
         sql_code = query.prepare(sql)
         sql_code = query.execute()
         while True:
@@ -281,7 +278,7 @@ class Cache:
         sql = "SELECT Name FROM %Library.Routine_RoutineList('*.{0},%*.{0}',1,0)".format(type)
         if not system:
             sql = sql + " WHERE NOT Name %STARTSWITH '%'"
-        query = self.pythonbind.query(database)
+        query = self.pythonbind.query(self.database)
         sql_code = query.prepare(sql)
         sql_code = query.execute()
         while True:
@@ -290,7 +287,7 @@ class Cache:
             print(cols[0])
 
 
-    def list(self,types,system):
+    def list_(self,types,system):
         if types == None:
             types = ['cls','mac','int','inc','bas']
         for theType in types:
@@ -298,6 +295,31 @@ class Cache:
                 self.listClasses(system)
             else:
                 self.listRoutines(theType,system)
+
+    def export_(self,names,output=None):
+        namesWithCommas = ",".join(names)
+        flags = 'd' if self.verbosity else '-d'
+        args = [namesWithCommas, None, flags]
+        self.database.run_class_method('%SYSTEM.OBJ', 'ExportToStream', args)
+        resultStream = args[1]
+        print(self.readStream(resultStream), file=output)
+
+    def import_(self,files):
+        for file_ in files:
+            text = file_.read()
+            stream = self.database.run_class_method('%Stream.GlobalCharacter','%New',[])
+            self.writeStream(stream,text)
+            flags = 'ckd' if self.verbosity else 'ck-d'
+            self.database.run_class_method('%SYSTEM.OBJ', 'LoadStream', [stream, flags])
+
+    def loadWSDLFromURL(self,url):
+        reader = self.database.run_class_method('%SOAP.WSDL.Reader','%New',[])
+        reader.run_obj_method('Process',[url])
+
+    def loadWSDL_(self,urls):
+        for url in urls:
+            self.loadWSDLFromURL(url)
+
 
 def __main():
     mainParser = argparse.ArgumentParser()
@@ -321,18 +343,29 @@ def __main():
 
     downloadParser = subParsers.add_parser('download', help='Download classes or routines')
     # downloadParser.add_argument('-n','--routineName',type=str,help='name for uploaded routines')
-    downloadParser.add_argument("names", metavar="N", type=str, nargs="+", help="Classes or Routines to download")
+    downloadParser.add_argument("names", metavar="N", type=str, nargs="+", help="Classes or routines to download")
+
+    importParser = subParsers.add_parser('import', help='Upload and compile classes or routines')
+    importParser.add_argument("files", metavar="F", type=argparse.FileType('r'), nargs="+", help="Files to import")
+
+    exportParser = subParsers.add_parser('export', help='Upload and compile classes or routines')
+    exportParser.add_argument("-o", "--output", type=argparse.FileType('w'), help='File to output to. STDOUT if not specified.')
+    exportParser.add_argument("names", metavar="N", type=str, nargs="+", help="Classes or routines to export")
 
     executeParser = subParsers.add_parser('execute', help='Execute arbitrary COS code')
     executeParser.add_argument('-', dest="stdin", action='store_true', help='Take code from stdin')
-    executeParser.add_argument("files", metavar="N", type=str, nargs="*", help="Execute routine specified in a file")
+    executeParser.add_argument("files", metavar="F", type=str, nargs="*", help="Execute routine specified in a file")
 
     editParser = subParsers.add_parser('edit', help='Download classes')
-    editParser.add_argument("names", metavar="N", type=str, nargs="+", help="Classes or Routines to edit")
+    editParser.add_argument("names", metavar="N", type=str, nargs="+", help="Classes or routines to edit")
 
     listParser = subParsers.add_parser('list', help='List all classes and routines in namespace')
     listParser.add_argument('-t','--type',action='append',help='cls|mac|int|obj|inc|bas',dest="types",choices=['cls','obj','mac','int','inc','bas'])
     listParser.add_argument('-s','--noSystem',action='store_false', help='hide system classes',dest="system")
+
+    loadWSDLParser = subParsers.add_parser('loadWSDL', help='Load a WSDL from a URL or a file, and create classes')
+    loadWSDLParser.add_argument('urls', nargs='+', type=str, help='specify a URL')
+
 
     results = mainParser.parse_args()
     kwargs = dict(results._get_kwargs())
@@ -343,7 +376,7 @@ def __main():
     cacheDatabase = Cache(bindings, credentials, instance, kwargs.pop('verbose'))
     function = kwargs.pop('function')
     if function:
-        getattr(cacheDatabase,function)(**kwargs)
+        getattr(cacheDatabase,function + '_')(**kwargs)
 
 if __name__ == "__main__":
     __main()

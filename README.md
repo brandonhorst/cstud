@@ -18,6 +18,7 @@ Current version: 0.0.3
     - Default: `_SYSTEM`
 * `-P, --password` - the password for the Caché user.
     - Default: `SYS`
+* `-V` - verbose output.
 
 Additionally, you need to specify either an Instance Name, or a Hostname/Port/Directory:
         
@@ -32,10 +33,15 @@ Additionally, you need to specify either an Instance Name, or a Hostname/Port/Di
 * `list` - list all available classes in the namespace
 * `upload` - upload all files specified in `COMMAND_ARGUMENTS` to the Caché server
 * `download` - download all classes specificed in `COMMAND_ARGUMENTS` from the Caché server, and output to stdout
-* `edit` - download all classes specificed in `COMMAND_ARGUMENTS` from the Caché server, and open up the editor specified by the EDITOR environment variable. After the editor closes, upload that result to the server and compile. This has been tested with EDITOR=subl (for Sublime Text) and EDITOR=mate (for TextMate) and works well.
+* `edit` - download all classes specificed in `COMMAND_ARGUMENTS` from the Caché server, and open up the editor specified by the EDITOR environment variable. After the editor closes, upload that result to the server and compile. This has been tested with EDITOR=subl (for Sublime Text) and EDITOR=mate (for TextMate) and works well
+* `import` - import all files specified in COMMAND_ARGUMENTS using $system.OBJ.Load()
+* `export` - export all classes/routines/globals specificed in `COMMAND_ARGUMENTS` from the Caché server, via $system.OBJ.Export(). You must specify a filetype (.CLS, .MAC, .GBL, etc.)
+    * use `-o` to specify an output file. If not specified, export to STDOUT.
 * `execute` - Execute arbitrary COS code, either from a file or passed into STDIN. For ease of use, I would recommend adding the following code to your .bash_profile:
     * `function cx { (echo "$1" | cstud execute -) }`
     * Then you can run it like `cx 'write $job'`
+* `loadWSDL` - Load a WSDL from a URL, and generate Cache classes. Due to Cache system limitations, this must be specified as URLs, not as local files.
+    * This limitation could be kludged around by generating a temporary CSP Page, and then referencing localhost. I'd rather not do that if possible.
 
 ###Notes
 
