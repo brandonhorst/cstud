@@ -140,9 +140,10 @@ class Cache:
 
         self.writeStream(routine,crlfText)
 
-        if verbose: print('Uploading %s' % routineName)
+        if self.verbosity: print('Uploading %s' % routineName)
+        flags = "ckd" if self.verbosity else "ck-d"
         routine.run_obj_method('Save',[])
-        routine.run_obj_method('Compile',['cko'])
+        routine.run_obj_method('Compile',[flags])
 
     def uploadClass(self,text):
         stream = self.database.run_class_method('%Stream.GlobalCharacter', '%New', [])
@@ -155,9 +156,8 @@ class Cache:
 
         self.writeStream(stream,crlfText)
 
-        if self.verbosity: print('Uploading %s' % name)
-
-        self.database.run_class_method('%Compiler.UDL.TextServices', 'SetTextFromStream',[None, name, stream])
+        result = self.database.run_class_method('%Compiler.UDL.TextServices', 'SetTextFromStream',[None, name, stream])
+        if self.verbosity: print('Uploading %s: %s' % (name, result))
         flags = "ckd" if self.verbosity else "ck-d"
         self.database.run_class_method('%SYSTEM.OBJ','Compile',[name,flags])
 
@@ -202,7 +202,7 @@ class Cache:
 
     def downloadRoutine(self,routineName):
         routine = self.database.run_class_method('%Library.Routine','%OpenId',[routineName])
-        return readStream(routine)
+        return self.readStream(routine)
 
     def downloadOnce(self,name):
         content = self.downloadClass(name)
@@ -228,7 +228,7 @@ class Cache:
         if self.classExists(className):
             self.deleteClass(className)
 
-        self.writeStream(write,classCode)
+        self.writeStream(stream,classCode)
 
         self.database.run_class_method('%Compiler.UDL.TextServices', 'SetTextFromStream',[None, className, stream])
         flags = "ckd" if self.verbosity else "ck-d"
@@ -239,7 +239,9 @@ class Cache:
     def executeFile(self,theFile):
         self.executeCode(theFile.read())
 
-    def execute_(self,files,stdin):
+    def execute_(self,inline,files,stdin):
+        if inline:
+            self.executeCode(inline)
         if stdin:
             inlineCode = sys.stdin.read().replace("\n","\r\n")
             self.executeCode(inlineCode)
@@ -353,6 +355,7 @@ def __main():
     exportParser.add_argument("names", metavar="N", type=str, nargs="+", help="Classes or routines to export")
 
     executeParser = subParsers.add_parser('execute', help='Execute arbitrary COS code')
+    executeParser.add_argument('-i', '--inline', type=str, help='Take code from stdin')
     executeParser.add_argument('-', dest="stdin", action='store_true', help='Take code from stdin')
     executeParser.add_argument("files", metavar="F", type=str, nargs="*", help="Execute routine specified in a file")
 
