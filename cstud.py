@@ -65,13 +65,13 @@ def getPythonBindings(instanceDetails,force):
         return changedIt
 
     binDirectory = os.path.join(instanceDetails.location,'bin')
-    if sys.platform == 'linux2':
+    if sys.platform.startswith('linux'):
         libraryPath = 'LD_LIBRARY_PATH'
     elif sys.platform == 'darwin':
         libraryPath = 'DYLD_LIBRARY_PATH'
     else:
         sys.exit("Unsupported Platform")
-    rerun = addToEnvPath('DYLD_LIBRARY_PATH',binDirectory) and addToEnvPath('PATH',binDirectory)
+    rerun = addToEnvPath(libraryPath,binDirectory) and addToEnvPath('PATH',binDirectory)
     if rerun:
         os.execve(os.path.realpath(__file__), sys.argv, os.environ)
 
