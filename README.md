@@ -31,6 +31,7 @@ Additionally, you need to specify either an Instance Name, or a Hostname/Port/Di
 ###`COMMAND`s and `COMMAND_ARGUMENTS`
 
 * `list` - list all available classes in the namespace
+* `info` - get information about the configuration
 * `upload` - upload all files specified in `COMMAND_ARGUMENTS` to the Caché server
 * `download` - download all classes specificed in `COMMAND_ARGUMENTS` from the Caché server, and output to stdout
 * `edit` - download all classes specificed in `COMMAND_ARGUMENTS` from the Caché server, and open up the editor specified by the `EDITOR` environment variable. After the editor closes, upload that result to the server and compile. This has been tested with `EDITOR=subl` (for Sublime Text) and `EDITOR=mate` (for TextMate) and works well

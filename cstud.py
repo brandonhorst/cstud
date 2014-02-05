@@ -13,6 +13,9 @@ import threading
 
 signal.signal(signal.SIGPIPE,signal.SIG_DFL) 
 
+def info_(default_location=False, **kwargs):
+    details = InstanceDetails()
+    print(details.location)
 
 class InstanceDetails:
     def __init__(self, instanceName="", host="", port=0, location=""):
@@ -369,17 +372,23 @@ def __main():
     loadWSDLParser = subParsers.add_parser('loadWSDL', help='Load a WSDL from a URL or a file, and create classes')
     loadWSDLParser.add_argument('urls', nargs='+', type=str, help='specify a URL')
 
+    infoParser = subParsers.add_parser('info', help='Get configuration information')
+    infoParser.add_argument('-l','--default-location', action='store_true', help='Print location of default Cache instance')
+
 
     results = mainParser.parse_args()
     kwargs = dict(results._get_kwargs())
 
-    instance = InstanceDetails(kwargs.pop('instance'), kwargs.pop('host'), kwargs.pop('port'), kwargs.pop('directory'))
-    bindings = getPythonBindings(instance,force=kwargs.pop('force_install'))
-    credentials = Credentials(kwargs.pop('username'), kwargs.pop('password'), kwargs.pop('namespace'))
-    cacheDatabase = Cache(bindings, credentials, instance, kwargs.pop('verbose'))
     function = kwargs.pop('function')
-    if function:
-        getattr(cacheDatabase,function + '_')(**kwargs)
+    if function == 'info':
+        info_(**kwargs)
+    else:
+        instance = InstanceDetails(kwargs.pop('instance'), kwargs.pop('host'), kwargs.pop('port'), kwargs.pop('directory'))
+        bindings = getPythonBindings(instance,force=kwargs.pop('force_install'))
+        credentials = Credentials(kwargs.pop('username'), kwargs.pop('password'), kwargs.pop('namespace'))
+        cacheDatabase = Cache(bindings, credentials, instance, kwargs.pop('verbose'))
+        if function:
+            getattr(cacheDatabase,function + '_')(**kwargs)
 
 if __name__ == "__main__":
     __main()
