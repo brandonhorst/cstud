@@ -29,12 +29,12 @@ class InstanceDetails:
         maxVersion = 0
         for instanceString in instanceStrings:
             instanceArray = instanceString.split('^')
+            versionInt = self.convertVersionToInteger(instanceArray[2])
+            if versionInt > maxVersion:
+                maxVersion = versionInt
+                self.latest_location = instanceArray[1]
             if instanceName.upper() == instanceArray[0]:
                 self.host = '127.0.0.1'
-                versionInt = self.convertVersionToInteger(instanceArray[2])
-                if versionInt > maxVersion:
-                    maxVersion = versionInt
-                    self.latest_location = instanceArray[1]
                 self.super_server_port = int(instanceArray[5])
                 self.web_server_port = int(instanceArray[6])
                 break
