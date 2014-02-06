@@ -107,7 +107,7 @@ def getPythonBindings(latest_location,force):
     def addToEnvPath(env,location):
         changedIt = True
         if not os.environ.get(env):
-            os.environ[env] += ":"+location
+            os.environ[env] = location
         elif not location in os.environ.get(env):
             os.environ[env] += ":"+location
         else:
@@ -319,39 +319,48 @@ class Cache:
         [thread.start() for thread in threads]
         [thread.join() for thread in threads]
 
-    def listClasses(self,system):
-        sql = 'SELECT Name FROM %Dictionary.ClassDefinition'
-        if not system:
-            sql = sql + " WHERE NOT Name %STARTSWITH '%'"
+    ### accepts runQuery("SELECT * FROM SAMPLE.PERSON") or runQuery("%SYS.Namespace::List")
+    def runQuery(self, sqlOrName):
         query = self.pythonbind.query(self.database)
-        sql_code = query.prepare(sql)
+        if '::' in sqlOrName:
+            query.prepare_class(*sqlOrName.split('::'))
+        else:
+            query.prepare(sqlOrName)
         sql_code = query.execute()
+        results = []
         while True:
             cols = query.fetch([None])
             if len(cols) == 0: break
-            print(cols[0])
+            results.append(cols)
+        return results
+
+    def listClasses(self,system):
+        sql = 'SELECT Name FROM %Dictionary.ClassDefinition'
+        results = self.runQuery(sql)
+        [print(col[0]) for col in results]
 
     def listRoutines(self,type,system):
         sql = "SELECT Name FROM %Library.Routine_RoutineList('*.{0},%*.{0}',1,0)".format(type)
-        if not system:
-            sql = sql + " WHERE NOT Name %STARTSWITH '%'"
-        query = self.pythonbind.query(self.database)
-        sql_code = query.prepare(sql)
-        sql_code = query.execute()
-        while True:
-            cols = query.fetch([None])
-            if len(cols) == 0: break
-            print(cols[0])
+        results = self.runQuery(sql)
+        [print(col[0]) for col in results]
 
+    def listNamespaces(self):
+        sql = '%SYS.Namespace::List'
+        results = self.runQuery(sql)
+        [print(col[0]) for col in results]
 
-    def list_(self,types,system):
-        if types == None:
-            types = ['cls','mac','int','inc','bas']
-        for theType in types:
-            if theType.lower() == 'cls':
-                self.listClasses(system)
-            else:
+    def list_(self,listFunction,types=None,system=False):
+        if listFunction == 'classes':
+            self.listClasses(system)
+            
+        elif listFunction == 'routines':
+            if types == None:
+                types = ['mac','int','inc','bas']
+            for theType in types:
                 self.listRoutines(theType,system)
+
+        elif listFunction == 'namespaces':
+            self.listNamespaces()
 
     def export_(self,names,output=None):
         namesWithCommas = ",".join(names)
@@ -399,7 +408,6 @@ def __main():
     uploadParser.add_argument("files", metavar="F", type=argparse.FileType('r'), nargs="+", help="files to upload")
 
     downloadParser = subParsers.add_parser('download', help='Download classes or routines')
-    # downloadParser.add_argument('-n','--routineName',type=str,help='name for uploaded routines')
     downloadParser.add_argument("names", metavar="N", type=str, nargs="+", help="Classes or routines to download")
 
     importParser = subParsers.add_parser('import', help='Upload and compile classes or routines')
@@ -417,9 +425,17 @@ def __main():
     editParser = subParsers.add_parser('edit', help='Download classes')
     editParser.add_argument("names", metavar="N", type=str, nargs="+", help="Classes or routines to edit")
 
-    listParser = subParsers.add_parser('list', help='List all classes and routines in namespace')
-    listParser.add_argument('-t','--type',action='append',help='cls|mac|int|obj|inc|bas',dest="types",choices=['cls','obj','mac','int','inc','bas'])
-    listParser.add_argument('-s','--noSystem',action='store_false', help='hide system classes',dest="system")
+    listParser = subParsers.add_parser('list', help='list server details')
+    listSubParsers = listParser.add_subparsers(help='list options',dest='listFunction')
+
+    listClassesParser = listSubParsers.add_parser('classes', help='List all classes and routines in namespace')
+    listClassesParser.add_argument('-s','--noSystem',action='store_false', help='hide system classes',dest="system")
+
+    listClassesParser = listSubParsers.add_parser('routines', help='List all classes and routines in namespace')
+    listClassesParser.add_argument('-t','--type',action='append',help='mac|int|obj|inc|bas',dest="types",choices=['obj','mac','int','inc','bas'])
+    listClassesParser.add_argument('-s','--noSystem',action='store_false', help='hide system classes',dest="system")
+
+    listNamespacesParser = listSubParsers.add_parser('namespaces', help='List all classes and routines in namespace')
 
     loadWSDLParser = subParsers.add_parser('loadWSDL', help='Load a WSDL from a URL or a file, and create classes')
     loadWSDLParser.add_argument('urls', nargs='+', type=str, help='specify a URL')
