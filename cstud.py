@@ -107,7 +107,7 @@ def getPythonBindings(latest_location,force):
     def addToEnvPath(env,location):
         changedIt = True
         if not os.environ.get(env):
-            os.environ[env] = ":"+location
+            os.environ[env] += ":"+location
         elif not location in os.environ.get(env):
             os.environ[env] += ":"+location
         else:
@@ -130,12 +130,14 @@ def getPythonBindings(latest_location,force):
             raise ImportError
         import intersys.pythonbind3
     except ImportError:
-        installerDirectory = os.path.join(latest_location, 'dev', 'python')
-        installerPath = os.path.join(installerDirectory, 'setup3.py')
-        installerProcess = subprocess.Popen([sys.executable, installerPath, 'install'], cwd=installerDirectory, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)
-        installerProcess.communicate(bytes(latest_location, 'UTF-8'))
-        import intersys.pythonbind3
-
+        try:
+            installerDirectory = os.path.join(latest_location, 'dev', 'python')
+            installerPath = os.path.join(installerDirectory, 'setup3.py')
+            installerProcess = subprocess.Popen([sys.executable, installerPath, 'install'], cwd=installerDirectory, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)
+            installerProcess.communicate(bytes(latest_location, 'UTF-8'))
+            import intersys.pythonbind3
+        except Exception as ex:
+            raise CstudException(301, 'Error installing Python Bindings: {0}'.format(ex))
 
     return intersys.pythonbind3
 
@@ -147,7 +149,10 @@ class Cache:
 
         url = '%s[%i]:%s' % (self.instance.host, self.instance.super_server_port, self.credentials.namespace)
         conn = bindings.connection()
-        conn.connect_now(url, self.credentials.username, self.credentials.password, None)
+        try:
+            conn.connect_now(url, self.credentials.username, self.credentials.password, None)
+        except Exception as ex:
+            raise CstudException(401, 'Unable to connect to Cache: {0}'.format(ex))
 
         self.database = bindings.database(conn)
         self.verbosity = verbosity
