@@ -74,5 +74,6 @@ If the Python 3 bindings are not installed, running cstud will automatically ins
     - Download generated code given class name (Currently requires a separate command)
 * Allow for essential Wizard-implemented Studio functionality
     - Create empty templates for new classes.
-* Handle errors well.
-* Soft functionality (syntax highlighting, wizards, snippets, and the like) will be pursued in independent projects. I hope to add functionality for Sublime Text, a solid multi-platform editor.
+* Soft functionality is being pursued in independent projects:
+    - Syntax Highlighting: https://github.com/seanklingensmith/CacheColors
+    - IDE Features: https://github.com/brandonhorst/SublimeCache
