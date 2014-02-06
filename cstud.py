@@ -19,35 +19,54 @@ def info_(bindings_location=False, **kwargs):
         print(details.latest_location)
 
 class InstanceDetails:
-    def __init__(self, instanceName="", host="", super_server_port=0, web_server_port=0):
-        if not instanceName:
+    def __init__(self, instanceName=None, host=None, super_server_port=None, web_server_port=None):
+        localInstances = self.getLocalInstances()
+
+        if not instanceName and not host and not super_server_port and not web_server_port:
             instanceName = self.getDefaultCacheInstanceName()
 
+        if instanceName:
+            instance = self.getThisInstance(localInstances,instanceName)
+            host = '127.0.0.1'
+            super_server_port = instance['super_server_port']
+            web_server_port = instance['web_server_port']
+
+        self.latest_location = self.getLatestLocation(localInstances)
+        self.host = host
+        self.super_server_port = int(super_server_port)
+        self.web_server_port = int(web_server_port)
+
+
+    def getLocalInstances(self):
         ccontrol = subprocess.Popen(['ccontrol', 'qlist'],stdout=subprocess.PIPE)
         stdout = ccontrol.communicate()[0]
         instanceStrings = stdout.decode('UTF-8').split('\n')
-        maxVersion = 0
+
+        localInstances = []
         for instanceString in instanceStrings:
-            instanceArray = instanceString.split('^')
-            versionInt = self.convertVersionToInteger(instanceArray[2])
+            if instanceString:
+                instanceArray = instanceString.split('^')
+                trueInstanceArray = instanceArray[0:3] + instanceArray[5:7]
+                instance = dict(zip(['name','location','version','super_server_port','web_server_port'],trueInstanceArray))
+                localInstances += [instance]
+        return localInstances
+
+    def getThisInstance(self,localInstances,instanceName):
+        for instance in localInstances:
+            if instance['name'] == instanceName.upper():
+                return instance
+        else:
+            raise "Invalid Instance Name: {0}".format(instanceName.upper())
+
+    def getLatestLocation(self,localInstances):
+        maxVersion = 0
+        maxLocation = ""
+        for instance in localInstances:
+            versionInt = self.convertVersionToInteger(instance['version'])
             if versionInt > maxVersion:
                 maxVersion = versionInt
-                self.latest_location = instanceArray[1]
-            if instanceName.upper() == instanceArray[0]:
-                self.host = '127.0.0.1'
-                self.super_server_port = int(instanceArray[5])
-                self.web_server_port = int(instanceArray[6])
-                break
-        else:
-            print("Invalid Instance Name: %s".format('instanceName'))
-            quit(1)
-
-        if host:
-            self.host = host
-        if super_server_port:
-            self.super_server_port = super_server_port
-        if web_server_port:
-            self.web_server_port = web_server_port
+                maxLocation = instance['location']
+        return maxLocation
 
     def getDefaultCacheInstanceName(self):
         ccontrol = subprocess.Popen(['ccontrol', 'default'],stdout=subprocess.PIPE)
@@ -66,7 +85,7 @@ class Credentials:
         self.password = password
         self.namespace = namespace
 
-def getPythonBindings(instanceDetails,force):
+def getPythonBindings(latest_location,force):
 
     #Returns True if it was not already there, false if it was
     def addToEnvPath(env,location):
@@ -79,7 +98,7 @@ def getPythonBindings(instanceDetails,force):
             changedIt = False
         return changedIt
 
-    binDirectory = os.path.join(instanceDetails.latest_location,'bin')
+    binDirectory = os.path.join(latest_location,'bin')
     if sys.platform.startswith('linux'):
         libraryPath = 'LD_LIBRARY_PATH'
     elif sys.platform == 'darwin':
@@ -95,10 +114,10 @@ def getPythonBindings(instanceDetails,force):
             raise ImportError
         import intersys.pythonbind3
     except ImportError:
-        installerDirectory = os.path.join(instanceDetails.latest_location, 'dev', 'python')
+        installerDirectory = os.path.join(latest_location, 'dev', 'python')
         installerPath = os.path.join(installerDirectory, 'setup3.py')
         installerProcess = subprocess.Popen([sys.executable, installerPath, 'install'], cwd=installerDirectory, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)
-        installerProcess.communicate(bytes(instanceDetails.latest_location, 'UTF-8'))
+        installerProcess.communicate(bytes(latest_location, 'UTF-8'))
         import intersys.pythonbind3
 
 
@@ -396,7 +415,7 @@ def __main():
         info_(**kwargs)
     else:
         instance = InstanceDetails(kwargs.pop('instance'), kwargs.pop('host'), kwargs.pop('super_server_port'), kwargs.pop('web_server_port'))
-        bindings = getPythonBindings(instance,force=kwargs.pop('force_install'))
+        bindings = getPythonBindings(instance.latest_location,force=kwargs.pop('force_install'))
         credentials = Credentials(kwargs.pop('username'), kwargs.pop('password'), kwargs.pop('namespace'))
         cacheDatabase = Cache(bindings, credentials, instance, kwargs.pop('verbose'))
         if function:
