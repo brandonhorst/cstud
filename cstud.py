@@ -13,6 +13,13 @@ import threading
 
 signal.signal(signal.SIGPIPE,signal.SIG_DFL) 
 
+class CstudException(Exception):
+    def __init__(self,code,value):
+        self.code = code
+        self.value = value
+    def __str__(self):
+        return "cstud Error #{0}: {1}".format(self.code,self.value)
+
 def info_(bindings_location=False, **kwargs):
     if bindings_location:
         details = InstanceDetails()
@@ -38,25 +45,31 @@ class InstanceDetails:
 
 
     def getLocalInstances(self):
-        ccontrol = subprocess.Popen(['ccontrol', 'qlist'],stdout=subprocess.PIPE)
-        stdout = ccontrol.communicate()[0]
-        instanceStrings = stdout.decode('UTF-8').split('\n')
+        try: 
+            ccontrol = subprocess.Popen(['ccontrol', 'qlist'],stdout=subprocess.PIPE)
+            stdout = ccontrol.communicate()[0]
+            instanceStrings = stdout.decode('UTF-8').split('\n')
 
-        localInstances = []
-        for instanceString in instanceStrings:
-            if instanceString:
-                instanceArray = instanceString.split('^')
-                trueInstanceArray = instanceArray[0:3] + instanceArray[5:7]
-                instance = dict(zip(['name','location','version','super_server_port','web_server_port'],trueInstanceArray))
-                localInstances += [instance]
-        return localInstances
+            localInstances = []
+            for instanceString in instanceStrings:
+                if instanceString:
+                    instanceArray = instanceString.split('^')
+                    trueInstanceArray = instanceArray[0:3] + instanceArray[5:7]
+                    instance = dict(zip(['name','location','version','super_server_port','web_server_port'],trueInstanceArray))
+                    localInstances += [instance]
+            return localInstances
+        except FileNotFoundError:
+            raise CstudException(103,"ccontrol not on PATH")
+        except:
+            raise CstudException(201,"ccontrol qlist output not expected")
+
 
     def getThisInstance(self,localInstances,instanceName):
         for instance in localInstances:
             if instance['name'] == instanceName.upper():
                 return instance
         else:
-            raise "Invalid Instance Name: {0}".format(instanceName.upper())
+            raise CstudException(102,"Invalid Instance Name: {0}".format(instanceName.upper()))
 
     def getLatestLocation(self,localInstances):
         maxVersion = 0
@@ -69,9 +82,12 @@ class InstanceDetails:
         return maxLocation
 
     def getDefaultCacheInstanceName(self):
-        ccontrol = subprocess.Popen(['ccontrol', 'default'],stdout=subprocess.PIPE)
-        stdout = ccontrol.communicate()[0]
-        return stdout.decode('UTF-8').split('\n')[0]
+        try:
+            ccontrol = subprocess.Popen(['ccontrol','default'],stdout=subprocess.PIPE)
+            stdout = ccontrol.communicate()[0]
+            return stdout.decode('UTF-8').split('\n')[0]
+        except FileNotFoundError:
+            raise CstudException(103,"ccontrol not on PATH")
 
     def convertVersionToInteger(self,version):
         splitVersion = version.split('.')
@@ -422,4 +438,7 @@ def __main():
             getattr(cacheDatabase,function + '_')(**kwargs)
 
 if __name__ == "__main__":
-    __main()
+    try:
+        __main()
+    except CstudException as ex:
+        print(ex)
