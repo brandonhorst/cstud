@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import argparse
+import contextlib
+import io
 import math
 import os
 import os.path
@@ -9,6 +11,7 @@ import string
 import subprocess
 import sys
 import signal
+import tempfile
 import threading
 
 if sys.platform == 'win32':
@@ -16,6 +19,25 @@ if sys.platform == 'win32':
 else:
     signal.signal(signal.SIGPIPE,signal.SIG_DFL) 
 
+@contextlib.contextmanager
+def stdout_redirected(to=os.devnull):
+    fd = sys.stdout.fileno()
+
+    with os.fdopen(os.dup(fd), 'w') as old_stdout:
+        sys.stdout.close()
+        os.dup2(to.fileno(), fd)
+        try:
+            yield # allow code to be run with the redirected stdout
+        finally:
+            os.dup2(old_stdout.fileno(), fd)
+            sys.stdout = os.fdopen(fd, 'w')
+
+def capture_output(func,args):
+    tf = tempfile.TemporaryFile()
+    with stdout_redirected(tf):
+        func(*args)
+    tf.seek(0)
+    return str(tf.read(), encoding='UTF-8').split('\r\n')
 
 class CstudException(Exception):
     def __init__(self,code,value):
@@ -372,27 +394,22 @@ class Cache:
         else:
             query.prepare(sqlOrName)
         sql_code = query.execute()
-        results = []
         while True:
             cols = query.fetch([None])
             if len(cols) == 0: break
-            results.append(cols)
-        return results
+            yield cols
 
     def listClasses(self,system):
         sql = 'SELECT Name FROM %Dictionary.ClassDefinition'
-        results = self.runQuery(sql)
-        [print(col[0]) for col in results]
+        [print(col[0]) for col in self.runQuery(sql)]
 
     def listRoutines(self,type,system):
         sql = "SELECT Name FROM %Library.Routine_RoutineList('*.{0},%*.{0}',1,0)".format(type)
-        results = self.runQuery(sql)
-        [print(col[0]) for col in results]
+        [print(col[0]) for col in self.runQuery(sql)]
 
     def listNamespaces(self):
         sql = '%SYS.Namespace::List'
-        results = self.runQuery(sql)
-        [print(col[0]) for col in results]
+        [print(col[0]) for col in self.runQuery(sql)]
 
     def list_(self,listFunction,types=None,system=False):
         if listFunction == 'classes':
@@ -430,6 +447,36 @@ class Cache:
     def loadWSDL_(self,urls):
         for url in urls:
             self.loadWSDLFromURL(url)
+
+    def findInFiles(self,term,fileFilter='*.*',system=True,whole_words=False,case_sensitive=False):
+        args = [term, fileFilter, system, whole_words, case_sensitive, 10000]
+        results = capture_output(self.database.run_class_method, ['%Studio.Project','FindInFiles', args])
+        [print(line) for line in results[2:-2]]
+
+    def findInDictionary(self,term,table,class_context=None):
+        sql = "SELECT parent FROM %Dictionary.{0} WHERE Name = '{1}'".format(table,term)
+        if class_context:
+            sql += " AND parent LIKE '%{0}'".format(class_context)
+        [print(row[0]) for row in self.runQuery(sql)]
+
+    def find_(self,term,type=None,class_context=None):
+        if not type:
+            self.findInFiles(term)
+        elif type == 'property':
+            self.findInDictionary(term,'CompiledProperty',class_context)
+        elif type == 'parameter':
+            self.findInDictionary(term,'CompiledParameter',class_context)
+        elif type == 'method':
+            self.findInDictionary(term,'CompiledMethod',class_context)
+        elif type == 'class':
+            self.findInDictionary(term,'CompiledClass')
+        elif type == 'routine':
+            pass
+        elif type == 'macro':
+            pass
+        elif type == 'table':
+            pass
+
 
 
 def __main():
@@ -487,6 +534,11 @@ def __main():
 
     infoParser = subParsers.add_parser('info', help='Get configuration information')
     infoParser.add_argument('-l','--bindings-location', action='store_true', help='Print location of latest Cache instance installed')
+
+    findParser = subParsers.add_parser('find', help='Find things on the server')
+    findParser.add_argument('-t', '--type', type=str, help='property|parameter|method|class|routine|macro|table or blank for all', choices=['property','parameter','method','class','routine','macro','table'])
+    findParser.add_argument('-c', '--class-context', type=str, help='class to search in (applies to property, parameter, and method')
+    findParser.add_argument('term', type=str, help='term to search for')
 
 
     results = mainParser.parse_args()

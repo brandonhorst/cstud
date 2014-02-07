@@ -42,6 +42,10 @@ Additionally, you need to specify either an Instance Name, or a Hostname/Ports:
 * `import` - import all files specified in COMMAND_ARGUMENTS using $system.OBJ.Load()
 * `export` - export all classes/routines/globals specificed in `COMMAND_ARGUMENTS` from the Caché server, via `$system.OBJ.Export()`. You must specify a filetype (`.CLS`, `.MAC`, `.GBL`, etc.)
     * use `-o` to specify an output file. If not specified, export to `STDOUT`.
+* `find` - find things on the server.
+    * use `-t` to only search for specific types. Options are property|parameter|method|class|routine|macro|table.
+    * use `-c` to supply a class context to search for properties, parameters, and methods.
+    * omit `-t` to execute a find-in-files.
 * `execute` - Execute arbitrary COS code, either from a file or passed into `STDIN`. For ease of use, I would recommend adding the following code to your `.bash_profile`:
     * `function cx { (echo "$1" | cstud execute -) }`
     * Then you can run it like `cx 'write $job'`
