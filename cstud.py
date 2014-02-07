@@ -11,7 +11,11 @@ import sys
 import signal
 import threading
 
-signal.signal(signal.SIGPIPE,signal.SIG_DFL) 
+if sys.platform == 'win32':
+    import winreg
+else:
+    signal.signal(signal.SIGPIPE,signal.SIG_DFL) 
+
 
 class CstudException(Exception):
     def __init__(self,code,value):
@@ -43,25 +47,63 @@ class InstanceDetails:
         self.super_server_port = int(super_server_port)
         self.web_server_port = int(web_server_port)
 
+    def iterateOverKey(self,key):
+        i = 0;
+        subKeys = []
+        while True:
+            try:
+                subKey = winreg.EnumKey(key, i)
+                subKeys.append(subKey)
+                i += 1
+            except WindowsError:
+                break
+        return subKeys
+
+    def isWin64(self):
+        return 'PROGRAMFILES(x86)' in os.environ
 
     def getLocalInstances(self):
-        try: 
-            ccontrol = subprocess.Popen(['ccontrol', 'qlist'],stdout=subprocess.PIPE)
-            stdout = ccontrol.communicate()[0]
-            instanceStrings = stdout.decode('UTF-8').split('\n')
-
+        if sys.platform == 'win32':
+            cacheSubKeyName = 'SOFTWARE\\{0}Intersystems\\Cache'.format('Wow6432Node\\' if self.isWin64() else '')
+            configsSubKeyName = '{0}\\Configurations'.format(cacheSubKeyName)
+            serversSubKeyName = '{0}\\Servers'.format(cacheSubKeyName)
+            configsSubKey = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,configsSubKeyName)
             localInstances = []
-            for instanceString in instanceStrings:
-                if instanceString:
-                    instanceArray = instanceString.split('^')
-                    trueInstanceArray = instanceArray[0:3] + instanceArray[5:7]
-                    instance = dict(zip(['name','location','version','super_server_port','web_server_port'],trueInstanceArray))
-                    localInstances += [instance]
+            instance = {}
+            for instanceName in self.iterateOverKey(configsSubKey):
+                instance['name'] = instanceName
+                instanceSubKeyName = '{0}\\{1}'.format(configsSubKeyName,instanceName)
+                instanceSubKey = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,instanceSubKeyName)
+                instance['version'] = winreg.QueryValueEx(instanceSubKey,'Version')[0]
+                directorySubKeyName = '{0}\\Directory'.format(instanceSubKeyName,instanceName)
+                instance['location'] = winreg.QueryValue(winreg.HKEY_LOCAL_MACHINE,directorySubKeyName)
+                preferredServerSubKeyName = '{0}\\Manager\\PreferredServer'.format(instanceSubKeyName,instanceName)
+                preferredServerName = winreg.QueryValue(winreg.HKEY_LOCAL_MACHINE,preferredServerSubKeyName)
+                if not hasattr(self,'defaultServerName'): self.defaultServerName = preferredServerName #cheating
+                serverSubKeyName = '{0}\\{1}'.format(serversSubKeyName,preferredServerName)
+                serverSubKey = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,serverSubKeyName)
+                instance['super_server_port'] = winreg.QueryValueEx(serverSubKey,'Port')[0]
+                instance['web_server_port'] = winreg.QueryValueEx(serverSubKey,'WebServerPort')[0]
+                localInstances.append(instance)
             return localInstances
-        except FileNotFoundError:
-            raise CstudException(103,"ccontrol not on PATH")
-        except:
-            raise CstudException(201,"ccontrol qlist output not expected")
+        else:
+            try: 
+                ccontrol = subprocess.Popen(['ccontrol', 'qlist'],stdout=subprocess.PIPE)
+                stdout = ccontrol.communicate()[0]
+                instanceStrings = stdout.decode('UTF-8').split('\n')
+
+                localInstances = []
+                for instanceString in instanceStrings:
+                    if instanceString:
+                        instanceArray = instanceString.split('^')
+                        trueInstanceArray = instanceArray[0:3] + instanceArray[5:7]
+                        instance = dict(zip(['name','location','version','super_server_port','web_server_port'],trueInstanceArray))
+                        localInstances += [instance]
+                return localInstances
+            except FileNotFoundError:
+                raise CstudException(103,"ccontrol not on PATH")
+            except:
+                raise CstudException(201,"ccontrol qlist output not expected")
 
 
     def getThisInstance(self,localInstances,instanceName):
@@ -82,12 +124,15 @@ class InstanceDetails:
         return maxLocation
 
     def getDefaultCacheInstanceName(self):
-        try:
-            ccontrol = subprocess.Popen(['ccontrol','default'],stdout=subprocess.PIPE)
-            stdout = ccontrol.communicate()[0]
-            return stdout.decode('UTF-8').split('\n')[0]
-        except FileNotFoundError:
-            raise CstudException(103,"ccontrol not on PATH")
+        if sys.platform == 'win32':
+            return self.defaultServerName
+        else:
+            try:
+                ccontrol = subprocess.Popen(['ccontrol','default'],stdout=subprocess.PIPE)
+                stdout = ccontrol.communicate()[0]
+                return stdout.decode('UTF-8').split('\n')[0]
+            except FileNotFoundError:
+                raise CstudException(103,"ccontrol not on PATH")
 
     def convertVersionToInteger(self,version):
         splitVersion = version.split('.')
