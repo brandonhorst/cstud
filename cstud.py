@@ -168,7 +168,7 @@ class Credentials:
         self.password = password
         self.namespace = namespace
 
-def getPythonBindings(latest_location,force):
+def getPythonBindingsLEGACY(latest_location,force):
 
     #Returns True if it was not already there, false if it was
     def addToEnvPath(env,location):
@@ -205,6 +205,45 @@ def getPythonBindings(latest_location,force):
             import intersys.pythonbind3
         except Exception as ex:
             raise CstudException(301, 'Error installing Python Bindings: {0}'.format(ex))
+
+    return intersys.pythonbind3
+
+def getPythonBindings(latest_location,force):
+    binDirectory = os.path.join(latest_location,'bin')
+    files = ['libcbind', 'libcppbind','libcacheodbciw']
+    newDir = ''
+
+    if sys.platform.startswith('linux'):
+        newDir = '/usr/lib64'
+        files = [file+".so" for file in files]
+    elif sys.platform == 'darwin':
+        newDir = os.path.join(os.environ['HOME'], 'lib')
+        files = [file+".dylib" for file in files]
+    else:
+        sys.exit("Unsupported Platform")
+
+    if not os.path.isdir(newDir):
+        os.mkdir(newDir)
+    for file in files:
+        newPath = os.path.join(newDir,file)
+        if force or not os.path.isfile(newPath):
+            if os.path.isfile(newPath):
+                os.unlink(newPath)
+            os.symlink(os.path.join(binDirectory,file), newPath)
+
+    try:
+        if force:
+            raise ImportError
+        import intersys.pythonbind3
+    except ImportError:
+        # try:
+        installerDirectory = os.path.join(latest_location, 'dev', 'python')
+        installerPath = os.path.join(installerDirectory, 'setup3.py')
+        installerProcess = subprocess.Popen([sys.executable, installerPath, 'install'], cwd=installerDirectory, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)
+        installerProcess.communicate(bytes(latest_location, 'UTF-8'))
+        import intersys.pythonbind3
+        # except Exception as ex:
+        #     raise CstudException(301, 'Error installing Python Bindings: {0}'.format(ex))
 
     return intersys.pythonbind3
 
